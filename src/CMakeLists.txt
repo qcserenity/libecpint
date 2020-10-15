@@ -52,7 +52,7 @@ target_include_directories(ecpint
 target_link_libraries(ecpint
  PRIVATE
   Faddeeva
-  libpugixml
+  pugixml::pugixml
 )
 
 # =========

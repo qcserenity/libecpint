@@ -60,9 +60,15 @@ namespace libecpint {
 	}
 
 	BesselFunction::~BesselFunction() {
-		free(K);
-		free(dK);
-		free(C);
+                for (int i = 0; i < N+1; i++) {
+                        for (int j = 0; j < TAYLOR_CUT + 1; j++)
+                                delete[] dK[i][j];
+                        delete[] K[i];
+                        delete[] dK[i];
+                }
+		delete[] K;
+		delete[] dK;
+		delete[] C;
 	}
 
 	// Tabulate the bessel function values

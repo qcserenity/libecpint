@@ -1,45 +1,47 @@
 /* 
- *      Copyright (c) 2020 Robert Shaw
- *		This file is a part of Libecpint.
- *
- *      Permission is hereby granted, free of charge, to any person obtaining
- *      a copy of this software and associated documentation files (the
- *      "Software"), to deal in the Software without restriction, including
- *      without limitation the rights to use, copy, modify, merge, publish,
- *      distribute, sublicense, and/or sell copies of the Software, and to
- *      permit persons to whom the Software is furnished to do so, subject to
- *      the following conditions:
- *
- *      The above copyright notice and this permission notice shall be
- *      included in all copies or substantial portions of the Software.
- *
- *      THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- *      EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
- *      MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- *      NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
- *      LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
- *      OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
- *      WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
- */
+*      Copyright (c) 2020 Robert Shaw
+*		This file is a part of Libecpint.
+*
+*      Permission is hereby granted, free of charge, to any person obtaining
+*      a copy of this software and associated documentation files (the
+*      "Software"), to deal in the Software without restriction, including
+*      without limitation the rights to use, copy, modify, merge, publish,
+*      distribute, sublicense, and/or sell copies of the Software, and to
+*      permit persons to whom the Software is furnished to do so, subject to
+*      the following conditions:
+*
+*      The above copyright notice and this permission notice shall be
+*      included in all copies or substantial portions of the Software.
+*
+*      THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+*      EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+*      MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+*      NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+*      LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+*      OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+*      WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+*/
 
+#include <algorithm>
+#include <set>
 
 #include "generate.hpp"
 
 /**
-  * \file generate.cpp
-  * \brief ECP integral code generator
-  */ 
+* \file generate.cpp
+* \brief ECP integral code generator
+*/ 
 
 /** 
-  * For a given ECP integral, Q(LA, LB, lam), generates the integral code.
-  * This determines which radial integrals are necessary, based on angular integral screening.
-  * If LA, LB <= maxUnrol and (LA + LB + lam) <= 3*maxUnrol, then it unrols the angular integration as well.
-  * 
-  * @param LA - the shellA angular momentum
-  * @param LB - the shellB angular momentum
-  * @param lam - the ECP angular momentum
-  * @param angInts - the angular integrals
-  */
+* For a given ECP integral, Q(LA, LB, lam), generates the integral code.
+* This determines which radial integrals are necessary, based on angular integral screening.
+* If LA, LB <= maxUnrol and (LA + LB + lam) <= 3*maxUnrol, then it unrols the angular integration as well.
+* 
+* @param LA - the shellA angular momentum
+* @param LB - the shellB angular momentum
+* @param lam - the ECP angular momentum
+* @param angInts - the angular integrals
+*/
 void generate_lists(int LA, int LB, int lam, libecpint::AngularIntegral& angInts) { 
 	using namespace libecpint;
 	
@@ -57,80 +59,120 @@ void generate_lists(int LA, int LB, int lam, libecpint::AngularIntegral& angInts
 		outfile << "// Generated as part of Libecpint, Copyright 2017 Robert A Shaw" << std::endl; 
 		outfile << "#include \"qgen.hpp\"" << std::endl; 
 		outfile << "namespace libecpint {" << std::endl << "namespace qgen {" << std::endl;
-		outfile << "void Q" << LA << "_" << LB << "_" << lam << "(ECP& U, GaussianShell& shellA, GaussianShell& shellB, "
-			<< "FiveIndex<double> &CA, FiveIndex<double> &CB, TwoIndex<double> &SA, TwoIndex<double> &SB, double Am, double Bm, "
-				<< "RadialIntegral &radint, AngularIntegral& angint, ThreeIndex<double> &values) {" << std::endl << std::endl; 
-		
-		double prefac = 16.0 * M_PI * M_PI;
-		int na = 0; 
-		int z1, z2;
-		double ang_alpha, ang_beta, ang; 
+		outfile << "void Q" << LA << "_" << LB << "_" << lam << "(const ECP& U, const GaussianShell& shellA, const GaussianShell& shellB, "
+			<< "const FiveIndex<double> &CA, const FiveIndex<double> &CB, const TwoIndex<double> &SA, const TwoIndex<double> &SB, const double Am, const double Bm, "
+				<< "const RadialIntegral &radint, const AngularIntegral& angint, const RadialIntegral::Parameters& parameters, ThreeIndex<double> &values) {" << std::endl << std::endl;
 		
 		// Do we need to unrol the angular integrals too? 
 		bool unrolling = LA <= maxUnrol && LB <= maxUnrol && (LA + LB + lam) <= 3*maxUnrol;
 		
 		// Store the terms and radials if unrolling, just radial indices if not
 		std::vector<SumTerm> terms; 
-		std::vector<Triple> radial_triples; 
+		std::set<Triple> radial_triples; 
 		
-		// Loop over cartesian functions in alpha order
+		int z1, z2, w_m, w_l;
+		int w_ax, w_ay, w_az, w_l1; 
+		int w_bx, w_by, w_bz, w_l2; 
+		double ang;
+		double prefac = 16.0 * M_PI * M_PI;
+		const int* mults = angInts.getOmegaMults();
+		const std::vector<double>& omega = angInts.getOmegaData();
+		int w_size = 2*lam+1; 
+		double w1_contr[w_size*(lam+LA+1)];
+		double w2_contr[w_size*(lam+LB+1)];
+		
+		int w_lam = lam * mults[3];
+		// Loop over cartesian shell functions in alpha order, e.g. {xx xy, xz, yy, yz, zz} for l=2
+		int na = 0; // Rows are shellA
 		for (int x1 = LA; x1 >= 0; x1--) {
 			for (int r1 = LA-x1; r1 >= 0; r1--) {
 				z1 = LA - x1 - r1; 
 		
-				int nb = 0;
+				int nb = 0; // Cols are shellB
 				for (int x2 = LB; x2 >= 0; x2--) {
 					for (int y2 = LB - x2; y2 >= 0; y2--) {
 						z2 = LB - x2 - y2; 
 				
+						// Begin full ECP integral expansion
 						for (int alpha_x = 0; alpha_x <= x1; alpha_x++) {
+							w_ax = w_lam + alpha_x*mults[0];
 							for (int alpha_y = 0; alpha_y <= r1; alpha_y++) {
+								w_ay = w_ax + alpha_y*mults[1];
 								for (int alpha_z = 0; alpha_z <= z1; alpha_z++) {
+									w_az = w_ay + alpha_z*mults[2];
 									int alpha = alpha_x + alpha_y + alpha_z; 
 							
 									for (int beta_x = 0; beta_x <= x2; beta_x++) {
+										w_bx = w_lam + beta_x*mults[0];
 										for (int beta_y = 0; beta_y <= y2; beta_y++) {
+											w_by = w_bx + beta_y*mults[1];
 											for (int beta_z = 0; beta_z <= z2; beta_z++) {
+												w_bz = w_by + beta_z*mults[2]; 
 												int beta = beta_x + beta_y + beta_z; 
-												int N = alpha + beta; 				
-										
+												int N = alpha + beta; 
+													
 												for (int lam1 = 0; lam1 <= lam + alpha; lam1++) {
+													w_l = lam1*w_size+lam; 
+													w_l1 = w_az + lam1*(1+mults[5]);
+													w_m = w_l1-mults[4];
+													for (int mu = -lam; mu <= lam; mu++) {
+														w_m += mults[4];
+														w1_contr[w_l+mu] = 0.0;
+														for (int mu1 = -lam1; mu1 <= lam1; mu1++)
+															w1_contr[w_l+mu] += omega[w_m+mu1];
+													}
+												}
+									
+												for (int lam2 = 0; lam2 <= lam+beta; lam2++) {
+													w_l  = lam2*w_size+lam;
+													w_l2 = w_bz + lam2*(1+mults[5]);
+													w_m = w_l2-mults[4];
+													for (int mu = -lam; mu <= lam; mu++) {
+														w_m += mults[4];
+														w2_contr[w_l+mu] = 0.0;
+														for (int mu2 = -lam2; mu2 <= lam2; mu2++) 
+															w2_contr[w_l+mu] += omega[w_m+mu2];
+													}
+												}
+														
+												for (int lam1=0; lam1 <= lam+alpha; lam1++) {
+													w_l1 = lam1*w_size+lam;
 													int lam2start = (lam1 + N) % 2; 
 													for (int lam2 = lam2start; lam2 <= lam + beta; lam2+=2) {
-												
-														for (int mu1 = -lam1; mu1 <= lam1; mu1++) {
-															for (int mu2 = -lam2; mu2 <= lam2; mu2++) {
-																																													
+														w_l2 = lam2*w_size+lam;
+														
+														ang = 0.0;
+														for (int mu = -lam; mu <= lam; mu++) 
+															ang += prefac * w1_contr[w_l1+mu] * w2_contr[w_l2+mu];
+														
+														if (fabs(ang) > 1e-15) {
+															radial_triples.insert(Triple{N, lam1, lam2}); 
+															if (unrolling) {
 																for (int mu = -lam; mu <= lam; mu++) {
-																	ang_alpha = angInts.getIntegral(alpha_x, alpha_y, alpha_z, lam, mu, lam1, mu1);
-																	ang_beta = angInts.getIntegral(beta_x, beta_y, beta_z, lam, mu, lam2, mu2); 
-																	ang = ang_alpha * ang_beta; 
-																	
-																	// Screen based on the angular integrals
-																	if (fabs(ang) > 1e-15) {
-																		if (unrolling) {
+																	for (int mu1 = -lam1; mu1 <= lam1; mu1++) {
+																		for (int mu2 = -lam2; mu2 <= lam2; mu2++) {
 																			SumTerm newTerm; 
 																			newTerm.SA = Pair(lam1, lam1+mu1); 
 																			newTerm.SB = Pair(lam2, lam2+mu2);
 																			newTerm.radial = Triple(N, lam1, lam2);
 																			newTerm.CA = Quintuple(0, na, alpha_x, alpha_y, alpha_z); 
 																			newTerm.CB = Quintuple(0, nb, beta_x, beta_y, beta_z); 
-																			newTerm.ang = prefac * ang;  
+																			newTerm.ang = prefac * angInts.getIntegral(alpha_x, alpha_y, alpha_z, lam, mu, lam1, mu1);
+																			newTerm.ang *= angInts.getIntegral(beta_x, beta_y, beta_z, lam, mu, lam2, mu2); 
 																			newTerm.mu = lam+mu; 
 																			newTerm.na = na;
 																			newTerm.nb = nb;
-																
+													
 																			terms.push_back(newTerm); 
 																		}
-																		radial_triples.push_back({N, lam1, lam2}); 
-																	} 
+																	}
 																}
-																
 															}
+														
+
 														}
 													}
 												}
-										
 										
 											}
 										}
@@ -147,14 +189,10 @@ void generate_lists(int LA, int LB, int lam, libecpint::AngularIntegral& angInts
 			}
 		}
 		
-		// Sort the radial triples and eliminate repeats
-		std::sort(radial_triples.begin(), radial_triples.end()); 
-		radial_triples.erase(std::unique(radial_triples.begin(), radial_triples.end()), radial_triples.end()); 
-		
 		// Determine the maximum number of base integrals needed across the set of all radial integrals
 		int nbase = 0; 
-		if (radial_triples.size() > 0) {
-			Triple& tmax = radial_triples[radial_triples.size()-1]; 
+		if (!radial_triples.empty()) {
+			const Triple& tmax = *radial_triples.crbegin();
 			nbase = std::get<0>(tmax) + std::get<1>(tmax) - 1; 
 			nbase = nbase < 0 ? 0 : nbase; 
 		}
@@ -162,7 +200,7 @@ void generate_lists(int LA, int LB, int lam, libecpint::AngularIntegral& angInts
 		// Sort the radials into two lists, depending on whether l1 <= l2 (radial_A), or l2 > l1 (radial_B)
 		// swapping the order of l1/l2 in the latter case
 		std::vector<Triple> radial_A, radial_B; 
-		for (Triple& t : radial_triples) {
+		for (const Triple& t : radial_triples) {
 			if (std::get<1>(t) <= std::get<2>(t)) radial_A.push_back(t);  
 			else radial_B.push_back({std::get<0>(t), std::get<2>(t), std::get<1>(t)});
 		}
@@ -172,7 +210,7 @@ void generate_lists(int LA, int LB, int lam, libecpint::AngularIntegral& angInts
 		bool first = true; 
 		for (Triple& t : radial_A) {
 			if (!first) outfile << "," << std::endl; 
-			else first = false; 
+			else first = false;
 			outfile << "\t\t{" + std::to_string(std::get<0>(t)) + ", "
 				+ std::to_string(std::get<1>(t)) + ", " 
 					+ std::to_string(std::get<2>(t)) + "}"; 
@@ -180,7 +218,7 @@ void generate_lists(int LA, int LB, int lam, libecpint::AngularIntegral& angInts
 		outfile << "\t};" << std::endl << std::endl;  
 		
 		outfile << "\tThreeIndex<double> radials(" << lam+LA+LB+1 << ", " << lam+LA+1 << ", " << lam+LB+1 << ");" << std::endl; 
-		outfile << "\tradint.type2(radial_triples_A, " << nbase << ", " << lam << ", U, shellA, shellB, Am, Bm, radials);" << std::endl << std::endl; 
+		outfile << "\tradint.type2(radial_triples_A, " << nbase << ", " << lam << ", U, shellA, shellB, Am, Bm, radials);" << std::endl << std::endl;
 		
 		// Now compute the reverse-ordered radials
 		outfile << "\tstd::vector<Triple> radial_triples_B = {" << std::endl; 
@@ -213,6 +251,7 @@ void generate_lists(int LA, int LB, int lam, libecpint::AngularIntegral& angInts
 		outfile.close();
 	}
 }
+
 
 int main(int argc, char* argv[]) {
 	
@@ -251,9 +290,9 @@ int main(int argc, char* argv[]) {
 				for (int k = 0; k <= maxL; k++) {
 					generate_lists(i, j, k, angInts); 
 					qgen_head << "\tvoid Q" << i << "_" << j << "_" << k << "("
-								<< "ECP&, GaussianShell&, GaussianShell&, FiveIndex<double>&, FiveIndex<double>&, "
-								<< "TwoIndex<double>&, TwoIndex<double>&, double, double, RadialIntegral&, "
-								<< "AngularIntegral&, ThreeIndex<double>&);" << std::endl; 
+						<< "const ECP&, const GaussianShell&, const GaussianShell&, const FiveIndex<double>&, const FiveIndex<double>&, "
+							<< "const TwoIndex<double>&, const TwoIndex<double>&, double, double, const RadialIntegral&, "
+								<< "const AngularIntegral&, const RadialIntegral::Parameters&, ThreeIndex<double>&);" << std::endl;
 				}
 			}
 		}
@@ -302,3 +341,4 @@ int main(int argc, char* argv[]) {
 	}
 	return 0; 
 }
+	

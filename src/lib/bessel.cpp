@@ -32,12 +32,12 @@ namespace libecpint {
 
 	// Constructor
 	BesselFunction::BesselFunction() {}
-	BesselFunction::BesselFunction(int _lMax, int _N, int _order, const double accuracy)
+	BesselFunction::BesselFunction(const int _lMax, const int _N, const int _order, const double accuracy)
 	{
 		init(_lMax, _N, _order, accuracy);
 	}
 
-	void BesselFunction::init(int _lMax, int _N, int _order, const double accuracy) {
+	void BesselFunction::init(const int _lMax, const int _N, const int _order, const double accuracy) {
 		// Check parameters
 		lMax = _lMax > -1 ? _lMax : 0;
 		N = _N > 0 ? _N : 1;
@@ -142,7 +142,7 @@ namespace libecpint {
 	}	
 
 	// Get an upper bound for M_l(z)
-	double BesselFunction::upper_bound(const double z, int L) {	
+	double BesselFunction::upper_bound(const double z, const int L) const {
 		// find nearest point (on left) in tabulated values
 		int ix = std::floor(N*z/16.0);
 		int minix = L > 0 ? 1 : 0;
@@ -153,7 +153,7 @@ namespace libecpint {
 
 	// Calculate modified spherical Bessel function K_l(z), weighted with an exponential factor e^(-z)
 	// for l = 0 to lMax. This restricts K(z) to the interval [0,1].
-	void BesselFunction::calculate(const double z, int maxL, std::vector<double> &values) {
+	void BesselFunction::calculate(const double z, int maxL, std::vector<double> &values) const {
 		if (lMax < maxL) {
 			std::cout << "Asked for " << maxL << " but only initialised to maximum L = " << lMax << "\n";
 			maxL = lMax;
@@ -217,7 +217,7 @@ namespace libecpint {
 	
 	// Calculate a modified spherical bessel function value at a point for only a single L
 	// method the same as in calculate for multiple L, but with efficiencies
-	double BesselFunction::calculate(const double z, int L) {
+	double BesselFunction::calculate(const double z, const int L) const {
 		double value = 0.0;
 		
 		if (z <= 0) value = 1.0;

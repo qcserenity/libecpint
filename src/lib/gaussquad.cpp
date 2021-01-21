@@ -23,7 +23,9 @@
  */
 
 #include "gaussquad.hpp"
+#include <cassert>
 #include <cmath>
+#include <cassert>
 #include <iostream>
 
 namespace libecpint {
@@ -38,8 +40,6 @@ namespace libecpint {
 		maxN = other.maxN;
 		M = other.M;
 		I = other.I;
-		start = other.start;
-		end = other.end; 
 		t = other.t;
 		x = other.x;
 		w = other.w;
@@ -47,7 +47,7 @@ namespace libecpint {
 
 	// Initialise the quadrature grid
 	// As described in both Perez92 and Perez93
-	void GCQuadrature::initGrid(int points, GCTYPE _t) {
+	void GCQuadrature::initGrid(const int points, const GCTYPE _t) {
 		t = _t;
 	
 		// Initialise parameters for grid
@@ -64,8 +64,6 @@ namespace libecpint {
 			maxN = 3*pow(2, p) - 1;
 		}
 		M = (maxN-1)/2; // Midpoint
-		start = 0;
-		end = maxN - 1;
 	
 		// initialise arrays
 		x.assign(maxN, 0.0);
@@ -115,9 +113,12 @@ namespace libecpint {
 	}
 
 	// Perform the GC integration on the function f
-	bool GCQuadrature::integrate(std::function<double(double, double*, int)> &f, double *params, const double tolerance) {
+	std::pair<double, bool> GCQuadrature::integrate(
+	    std::function<double(double, const double*, int)> &f, const double *params,
+	    const double tolerance, const int start, const int end) const {
 		bool converged = false; // 0 for converged, -1 for not converged
-	
+
+		double I = 0;
 		if (t == ONEPOINT) {
 			// Perez92 Case
 			// Integration proceeds in the sequence T_1, T_3, T_7, ..., T_{maxN}
@@ -141,7 +142,7 @@ namespace libecpint {
 			int p = (M+1) / 2; // M / 2^n 
 			while (n < maxN && !converged) {
 				// Compute T_{2n+1}
-				T2n1 = Tn + sumTerms(f, params, n, p, 2);
+				T2n1 = Tn + sumTerms(f, params, n, start, end, p, 2);
 			
 				// Check convergence
 				dT = T2n1 - 2.0*Tn;
@@ -183,13 +184,13 @@ namespace libecpint {
 		 
 			while(m < maxN && !converged) {
 				// Propagate the two-point sequence first 
-				T2m1 = Tm + Tn - Tn12 + sumTerms(f, params, (2*m - 1)/3, M2, 3);
+				T2m1 = Tm + Tn - Tn12 + sumTerms(f, params, (2*m - 1)/3, start, end, M2, 3);
 			
 				// Check convergence
 				error = 16.0 * fabs(0.5*T2m1 - Tm) / (3.0 * (m + 1)); 
 				if (error > tolerance) {
 					// Propagate the one-point sequence
-					T2n1 = Tn + sumTerms(f, params, n, p, 2); 
+					T2n1 = Tn + sumTerms(f, params, n, start, end, p, 2);
 				
 					// Check convergence again
 					error = 16.0 * fabs(2.0*T2m1 - 3.0*T2n1) / (18.0 * (n+1) );
@@ -213,11 +214,18 @@ namespace libecpint {
 			I = 16.0 * T2m1 / (3.0 * (m + 1.0));
 		}
 	
-		return converged;
+		return {I, converged};
 	}
 
 	// Worker function to do the additional sum terms when going from I_n to I_{2n+1}
-	double GCQuadrature::sumTerms(std::function<double(double, double*, int)> &f, double *p, int limit, int shift, int skip) {
+	double GCQuadrature::sumTerms(
+	    const std::function<double(double, const double*, int)> &f,
+	    const double *p, const int limit, const int start, const int end,
+	    const int shift, const int skip) const {
+		assert(start >= 0 && start < maxN);
+		assert(end >= 0 && end < maxN);
+		assert(end >= start);
+
 		double value = 0.0;
 		int ix; 
 		for (int i = 0; i <= limit; i+=2) {	
@@ -246,7 +254,7 @@ namespace libecpint {
 		}
 	}
 
-	void GCQuadrature::transformRMinMax(double z, double p) {
+	void GCQuadrature::transformRMinMax(const double z, const double p) {
 		double osz = 1.0 / sqrt(z);
 	
 		// Determine interval
@@ -266,7 +274,7 @@ namespace libecpint {
 		}
 	}
 	
-	void GCQuadrature::untransformRMinMax(double z, double p) {
+	void GCQuadrature::untransformRMinMax(const double z, const double p) {
 		double osz = 1.0 / sqrt(z);
 	
 		// Determine interval

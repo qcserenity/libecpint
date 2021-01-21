@@ -29,9 +29,10 @@
 
 namespace libecpint {
 	
-	void RadialIntegral::compute_base_integrals(int N_min, int N_max, double p, double o_root_p, double P1,
-	double P2, double P1_2, double P2_2, double X1, double X2,
-	double oP1, double oP2, double* values) {
+	void RadialIntegral::compute_base_integrals(
+      const int N_min, const int N_max, const double p, const double o_root_p, const double P1,
+      const double P2, const double P1_2, const double P2_2, const double X1, const double X2,
+      const double oP1, const double oP2, double* values) const {
 	
 		// Recursively construct the base integrals in order F2, G3, F4, G5, etc... as described in Shaw2017
 		
@@ -103,12 +104,15 @@ namespace libecpint {
 	
 	}
 
-	std::pair<double, bool> RadialIntegral::integrate_small(int N, int l1, int l2, double n, double a, double b, double A, double B) {
+	std::pair<double, bool> RadialIntegral::integrate_small(
+      const int N, const int l1, const int l2, const double n,
+      const double a, const double b, const double A, const double B) const {
 		int gridSize = primGrid.getN();
 		double zt = n+a+b;
 		double pt = (a*A + b*B)/zt;
-		primGrid.transformRMinMax(zt, pt); 
-		std::vector<double> &gridPoints = primGrid.getX();
+		auto transformedGrid = primGrid;
+		transformedGrid.transformRMinMax(zt, pt);
+		std::vector<double> &gridPoints = transformedGrid.getX();
 	
 		double Ftab[gridSize]; 
 	
@@ -143,17 +147,16 @@ namespace libecpint {
 		for (int j = i; j < gridSize; j++)
 			Ftab[j] = 0.0;
 	
-		std::function<double(double, double*, int)> intgd = RadialIntegral::integrand;
+		std::function<double(double, const double*, int)> intgd = RadialIntegral::integrand;
 		
 		// There should be no instances where this fails, so no backup plan to large grid, but return check just in case 
-		bool success = primGrid.integrate(intgd, Ftab, 1e-12); 
-		std::pair<double, bool> rval = {primGrid.getI(), success};  
-		primGrid.untransformRMinMax(zt, pt);
-		return rval; 
+		return transformedGrid.integrate(intgd, Ftab, 1e-12, 0, primGrid.getN() - 1);
 	}
 	
-	void RadialIntegral::type2(std::vector<Triple>& triples, int nbase, int lam, ECP &U, GaussianShell &shellA, GaussianShell &shellB,
-	double A, double B, ThreeIndex<double> &radials)
+	void RadialIntegral::type2(
+	    const std::vector<Triple>& triples, const int nbase, const int lam,
+	    const ECP &U, const GaussianShell &shellA, const GaussianShell &shellB,
+      const double A, const double B, ThreeIndex<double> &radials) const
 	{
 		int npA = shellA.nprimitive();
 		int npB = shellB.nprimitive();

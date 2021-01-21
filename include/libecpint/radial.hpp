@@ -34,7 +34,7 @@
 
 namespace libecpint {
 
-	const double MIN_EXP = 0.002;
+	constexpr double MIN_EXP = 0.002;
 	/** 
 	* \class RadialIntegral
 	* \brief Abstracts the calculation of radial integrals for ECP integration.
@@ -54,15 +54,12 @@ namespace libecpint {
 		GCQuadrature primGrid; 
 		/// Modified spherical Bessel function of the first kind
 		BesselFunction bessie;
-	
-		/// Matrices of parameters needed in both type 1 and 2 integrations
-		TwoIndex<double> p, P, P2, K;
-	
+
 		/// Tolerance for change below which an integral is considered converged
 		double tolerance;
 	
 		/// This integrand simply returns the pretabulated integrand values stored in p given an index ix
-		static double integrand(double r, double *p, int ix);
+		static double integrand(double r, const double *p, int ix);
 
 		/**
 		* Builds a matrix of Bessel at the given points up to the given maximum angular momentum. 
@@ -72,7 +69,7 @@ namespace libecpint {
 		* @param values - TwoIndex<double> to store the values in
 		* @param weight - factor to weight r by (defaults to 1)
 		*/
-		void buildBessel(std::vector<double> &r, int nr, int maxL, TwoIndex<double> &values, double weight = 1.0);
+		void buildBessel(const std::vector<double> &r, int nr, int maxL, TwoIndex<double> &values, double weight = 1.0) const;
 	
 		double calcKij(double Na, double Nb, double zeta_a, double zeta_b, double R2) const;
 	
@@ -84,7 +81,7 @@ namespace libecpint {
 		* @param grid - the quadrature grid to be used
 		* @param Utab - the array to put the values into.
 		*/
-		void buildU(ECP &U, int l, int N, GCQuadrature &grid, double *Utab);
+		void buildU(const ECP &U, const int l, const int N, const GCQuadrature &grid, double *Utab) const;
 	
 		/**
 		* Tabulate the F function values for the default mode of calculating type 2 integrals.
@@ -97,7 +94,10 @@ namespace libecpint {
 		* @param end - the grid point to stop at
 		* @param F - the matrix to put the values in
 		*/
-		void buildF(GaussianShell &shell, double A, int lstart, int lend, std::vector<double> &r, int nr, int start, int end, TwoIndex<double> &F);
+		void buildF(
+        const GaussianShell &shell, double A, int lstart, int lend,
+        const std::vector<double> &r, int nr, int start, int end,
+        TwoIndex<double> &F) const;
 	
 		/**
 		* Performs the integration given the pretabulated integrand values. 
@@ -106,10 +106,13 @@ namespace libecpint {
 		* @param intValues - the TwoIndex<double> of pretabulated integrand values for each angular momentum needed
 		* @param grid - the quadrature grid
 		* @param values - the vector to put the resulting integrals into
+		* @param start - index of first point to integrate over
+		* @param end - index of last point to integrate over
 		* @param offset - the angular momentum to start at (defaults to 0)
 		* @param skip - the steps of angular momentum to go up in (defaults to 1)
 		*/
-		int integrate(int maxL, int gridSize, TwoIndex<double> &intValues, GCQuadrature &grid, std::vector<double> &values, int offset = 0, int skip = 1);
+		int integrate(int maxL, int gridSize, const TwoIndex<double> &intValues, GCQuadrature &grid, std::vector<double> &values,
+                int start, int end, int offset = 0, int skip = 1) const;
 		
 		/** 
 		  * Computes the base integrals needed for the recursive type 2 integration. See ref. Shaw2017 for details. 
@@ -129,7 +132,7 @@ namespace libecpint {
 		  */
 		void compute_base_integrals(int N_min, int N_max, double p, double o_root_p, double P1,
 			 						double P2, double P1_2, double P2_2, double X1, double X2,
-									double oP1, double oP2, double* values); 
+									double oP1, double oP2, double* values) const;
 									
 		/**
 		  * Performs a single radial quadrature over a small grid
@@ -143,7 +146,8 @@ namespace libecpint {
 		  * @param B - magnitude of distance of shellB from ECP
 		  * @return a pair, where the first is the integral value, and the second is true if integration converged
 		  */
-		std::pair<double, bool> integrate_small(int N, int l1, int l2, double n, double a, double b, double A, double B);
+		std::pair<double, bool> integrate_small(
+		    int N, int l1, int l2, double n, double a, double b, double A, double B) const;
 		
 	public:
 		/// Default constructor creates an empty object
@@ -157,14 +161,21 @@ namespace libecpint {
 		* @param large - the maximum number of quadrature points for the large integration grid (default 1024, minimum recommended)
 		*/
 		void init(int maxL, double tol = 1e-15, int small = 256, int large = 1024);
-	
+
+    /// struct to store all parameters needed in both type 1 and 2 integrations
+		struct Parameters {
+      /// Matrices of parameters needed in both type 1 and 2 integrations
+      TwoIndex<double> p, P, P2, K;
+		};
 		/**
 		* Given two GaussianShells, builds the parameters needed by both kind of integral. 
 		* @param shellA - the first GaussianShell
 		* @param shellB - the second GaussianShell
 		* @param data - the data container for the shell pair
+		* @returns the parameters needed in both type 1 and 2 integrations
 		*/
-		void buildParameters(GaussianShell &shellA, GaussianShell &shellB, ShellPairData &data);
+		Parameters buildParameters(
+		    const GaussianShell &shellA, const GaussianShell &shellB, const ShellPairData &data) const;
 	
 		/**
 		* Calculates all type 1 radial integrals over two Gaussian shells up to the given maximum angular momentum.
@@ -175,9 +186,12 @@ namespace libecpint {
 		* @param shellA - the first GaussianShell
 		* @param shellB - the second GaussianShell
 		* @param data - the data container for the shell pair
+		* @param parameters - pre-calculated parameters for the radial integral
 		* @param values - the matrix to return the integrals in
 		*/
-		void type1(int maxL, int N, int offset, ECP &U, GaussianShell &shellA, GaussianShell &shellB, ShellPairData &data, TwoIndex<double> &values);
+		void type1(int maxL, int N, int offset,
+               const ECP &U, const GaussianShell &shellA, const GaussianShell &shellB,
+               const ShellPairData &data, const Parameters & parameters, TwoIndex<double> &values) const;
 	
 		/**
 		* Calculates all type 2 radial integrals over two Gaussian shells for the given ECP angular momentum l using quadrature
@@ -191,9 +205,12 @@ namespace libecpint {
 		* @param shellA - the first GaussianShell
 		* @param shellB - the second GaussianShell
 		* @param data - the data container for the shell pair
+		* @param parameters - pre-calculated parameters for the radial integral
 		* @param values - the matrix to return the integrals in
 		*/
-		void type2(int lam, int l1start, int l1end, int l2start, int l2end, int N, ECP &U, GaussianShell &shellA, GaussianShell &shellB, ShellPairData &data, TwoIndex<double> &values);	
+		void type2(int lam, int l1start, int l1end, int l2start, int l2end, int N,
+               const ECP &U, const GaussianShell &shellA, const GaussianShell &shellB,
+               const ShellPairData &data, const Parameters & parameters, TwoIndex<double> &values) const;
 
 		/**
 		* Calculates all the requested type 2 radial integrals using predominantly a recursive algorithm. 
@@ -210,7 +227,10 @@ namespace libecpint {
 		* @param B - the magnitude of the distance of shellB from the ECP
 		* @param radials - the array to return the integrals in, indexed as (N, l1, l2)
 		*/
-		void type2(std::vector<Triple> &triples, int nbase, int lam, ECP &U, GaussianShell &shellA, GaussianShell &shellB, double A, double B, ThreeIndex<double> &radials); 
+		void type2(
+        const std::vector<Triple> &triples, int nbase, int lam,
+        const ECP &U, const GaussianShell &shellA, const GaussianShell &shellB,
+        double A, double B, ThreeIndex<double> &radials) const;
 	
 		/**
 		  * Estimates the value of the requested type 2 radial integral for prescreening, as described in ref. Shaw2017.
@@ -227,7 +247,7 @@ namespace libecpint {
 		  * @param B - magnitude of distance of shellB from ECP
 		  * @return estimated value (upper bound) of the type 2 integral 
 		  */
-		double estimate_type2(int N, int l1, int l2, double n, double a, double b, double A, double B);
+		double estimate_type2(int N, int l1, int l2, double n, double a, double b, double A, double B) const;
 	};
 
 }
